@@ -14,6 +14,14 @@
  * limitations under the License.
  */
 
+/*
+ * Usage:
+ *  server {
+ *    pagespeed    on|off;
+ *    logstuff     on|off;
+ *  }
+ */
+
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
