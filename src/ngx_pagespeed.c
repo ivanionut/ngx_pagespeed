@@ -30,7 +30,7 @@ ngx_module_t ngx_pagespeed;
 
 // Hack for terser exploration.
 #define DBG(r, args...) \
-  ngx_log_error(NGX_LOG_ERR, (r)->connection->log, 0, args)
+  ngx_log_error(NGX_LOG_ALERT, (r)->connection->log, 0, args)
 
 typedef struct {
   ngx_flag_t  logstuff;
@@ -119,9 +119,11 @@ ngx_int_t exp_note_processed(ngx_http_request_t *r, ngx_chain_t *in)
   // FIXME(jefftk): this doesn't work
   char *note = "<!-- Processed through ngx_pagespeed -->";
   int note_len = strlen(note);
-  b->pos = ngx_pnalloc(r->pool, note_len);
+  b->start = b->pos = ngx_pnalloc(r->pool, note_len);
   strncpy((char*)b->pos, note, note_len);
-  b->last = b->pos + note_len - 1;
+  b->end = b->last = b->pos + note_len - 1;
+  b->memory = 1;
+
   DBG(r, "\nAttempted to append: '%*s'\n", note_len, b->pos);
 
   // Link the new buffer into the buffer chain.
@@ -136,6 +138,7 @@ ngx_int_t exp_note_processed(ngx_http_request_t *r, ngx_chain_t *in)
 
   chain_link->buf->last_buf = 0;
   added_link->buf->last_buf = 1;
+  added_link->buf->last_in_chain = 1;
 
   return NGX_OK;
 }
@@ -159,6 +162,7 @@ void exp_inspect_buffer_chain(ngx_http_request_t *r, ngx_chain_t *in)
         "  file_last: %d\n"
         "  start: %p\n"
         "  end: %p\n"
+        "  size: %d\n"
         "\n",
         link_no,
         b->pos,
@@ -166,14 +170,15 @@ void exp_inspect_buffer_chain(ngx_http_request_t *r, ngx_chain_t *in)
         b->file_pos,
         b->file_last,
         b->start,
-        b->end
+        b->end,
+        ngx_buf_size(b)
         );
 
     if (b->pos && b->last) {
-      DBG(r, "\n[pos last] contains: '%*s'\n", b->last - b->pos, b->pos);
+      DBG(r, "\n  [pos last] contains: '%*s'\n", b->last - b->pos, b->pos);
     }
     if (b->start && b->end) {
-      DBG(r, "\n[start end] contains: '%*s'\n", b->end - b->start, b->start);
+      DBG(r, "\n  [start end] contains: '%*s'\n", b->end - b->start, b->start);
     }
     if (b->file) {
       ssize_t file_size = b->file_last - b->file_pos;
@@ -183,7 +188,7 @@ void exp_inspect_buffer_chain(ngx_http_request_t *r, ngx_chain_t *in)
         DBG(r, "Failed to read file; got %d bytes expected %s bytes",
             n, file_size);
       } else {
-        DBG(r, "\n[file_pos file_last] contains: '%*s'\n",
+        DBG(r, "\n  [file_pos file_last] contains: '%*s'\n",
             file_size, tmp_buf);
       }
       ngx_pfree(r->pool, tmp_buf);
