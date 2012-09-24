@@ -207,6 +207,24 @@ void exp_inspect_buffer_chain(ngx_http_request_t *r, ngx_chain_t *in)
   }
 }
 
+// Modify temporary buffers in place to substitute 'h2' for 'h1'.
+ngx_int_t exp_h1_to_h2(ngx_http_request_t *r, ngx_chain_t *in) {
+  ngx_chain_t *cur = in;
+  for (; cur != NULL ; cur = cur->next) {
+    if (cur->buf->temporary) {
+      u_char* p;
+      // Safe to modify p[0] and p[1]
+      for (p = cur->buf->pos; p < cur->buf->last - 1; p++) {
+        if (p[0] == 'h' && p[1] == '1') {
+          p[1] = '2';
+        }
+      }
+    }
+  }
+  return NGX_OK;
+}
+
+
 // Convert buffers representing files to in-memory buffers.  This is an
 // intermediate step: eventually we'll stick rewriting the html in the middle of
 // something like this.
@@ -264,6 +282,11 @@ ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
   //}
 
   status = exp_buffers_to_memory(r, in);
+  if (status != NGX_OK) {
+    return status;
+  }
+
+  status = exp_h1_to_h2(r, in);
   if (status != NGX_OK) {
     return status;
   }
