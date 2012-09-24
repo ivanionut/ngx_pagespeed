@@ -81,6 +81,7 @@ ngx_http_pagespeed_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
   return NGX_CONF_OK;
 }
 
+static ngx_http_output_header_filter_pt ngx_http_next_header_filter;
 static ngx_http_output_body_filter_pt ngx_http_next_body_filter;
 
 // Add a buffer to the end of the buffer chain indicating that we were processed
@@ -117,8 +118,7 @@ ngx_int_t exp_note_processed(ngx_http_request_t *r, ngx_chain_t *in)
   }
 
   // Write to the new buffer.
-  // FIXME(jefftk): this doesn't work
-  char *note = "<!-- Processed through ngx_pagespeed -->";
+  char *note = "<!-- Processed through ngx_pagespeed -->\n";
   int note_len = strlen(note);
   b->start = b->pos = ngx_pnalloc(r->pool, note_len);
   strncpy((char*)b->pos, note, note_len);
@@ -271,6 +271,15 @@ ngx_int_t exp_buffers_to_memory(ngx_http_request_t *r, ngx_chain_t *in) {
 }
 
 static
+ngx_int_t ngx_http_pagespeed_header_filter(ngx_http_request_t *r)
+{
+  // We're adding content below, so switch to 'Transfer-Encoding: chunked' and
+  // calculate on the fly.
+  ngx_http_clear_content_length(r);
+  return ngx_http_next_header_filter(r);
+}
+
+static
 ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {
   ngx_int_t status;
@@ -311,9 +320,13 @@ ngx_http_pagespeed_init(ngx_conf_t *cf)
   pagespeed_config = ngx_http_conf_get_module_loc_conf(cf, ngx_pagespeed);
 
   if (pagespeed_config->active) {
-    if (pagespeed_config->logstuff) {
-      ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "We're active!");
-    }
+    //if (pagespeed_config->logstuff) {
+    //  ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "We're active!");
+    //}
+
+    ngx_http_next_header_filter = ngx_http_top_header_filter;
+    ngx_http_top_header_filter = ngx_http_pagespeed_header_filter;
+
     ngx_http_next_body_filter = ngx_http_top_body_filter;
     ngx_http_top_body_filter = ngx_http_pagespeed_body_filter;
   }
