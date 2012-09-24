@@ -83,7 +83,8 @@ ngx_http_pagespeed_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
 static ngx_http_output_body_filter_pt ngx_http_next_body_filter;
 
-
+// Add a buffer to the end of the buffer chain indicating that we were processed
+// through ngx_pagespeed.
 ngx_int_t exp_note_processed(ngx_http_request_t *r, ngx_chain_t *in)
 {
   // Find the end of the buffer chain.
@@ -121,8 +122,8 @@ ngx_int_t exp_note_processed(ngx_http_request_t *r, ngx_chain_t *in)
   int note_len = strlen(note);
   b->start = b->pos = ngx_pnalloc(r->pool, note_len);
   strncpy((char*)b->pos, note, note_len);
-  b->end = b->last = b->pos + note_len - 1;
-  b->memory = 1;
+  b->end = b->last = b->pos + note_len;
+  b->temporary = 1;
 
   DBG(r, "\nAttempted to append: '%*s'\n", note_len, b->pos);
 
@@ -138,14 +139,15 @@ ngx_int_t exp_note_processed(ngx_http_request_t *r, ngx_chain_t *in)
 
   chain_link->buf->last_buf = 0;
   added_link->buf->last_buf = 1;
+  chain_link->buf->last_in_chain = 0;
   added_link->buf->last_in_chain = 1;
 
   return NGX_OK;
 }
 
+// Print debugging info about the current buffer chain.
 void exp_inspect_buffer_chain(ngx_http_request_t *r, ngx_chain_t *in)
 {
-  // Inspect the buffer chain
   DBG(r, "Inspecting buffer chain");
   ngx_chain_t *chain_link;
   int link_no = 0;
@@ -163,6 +165,12 @@ void exp_inspect_buffer_chain(ngx_http_request_t *r, ngx_chain_t *in)
         "  start: %p\n"
         "  end: %p\n"
         "  size: %d\n"
+        "  memory: %d\n"
+        "  temporary: %d\n"
+        "  last_in_chain: %d\n"
+        "  last_buf: %d\n"
+        "  in_file: %d\n"
+        "  ngx_buf_special(): %d"
         "\n",
         link_no,
         b->pos,
@@ -171,14 +179,17 @@ void exp_inspect_buffer_chain(ngx_http_request_t *r, ngx_chain_t *in)
         b->file_last,
         b->start,
         b->end,
-        ngx_buf_size(b)
+        ngx_buf_size(b),
+        b->memory,
+        b->temporary,
+        b->last_in_chain,
+        b->last_buf,
+        b->in_file,
+        ngx_buf_special(b)
         );
 
     if (b->pos && b->last) {
-      DBG(r, "\n  [pos last] contains: '%*s'\n", b->last - b->pos, b->pos);
-    }
-    if (b->start && b->end) {
-      DBG(r, "\n  [start end] contains: '%*s'\n", b->end - b->start, b->start);
+      DBG(r, "\n  [pos last] contains:\n  '%*s'\n\n", b->last - b->pos, b->pos);
     }
     if (b->file) {
       ssize_t file_size = b->file_last - b->file_pos;
@@ -196,17 +207,68 @@ void exp_inspect_buffer_chain(ngx_http_request_t *r, ngx_chain_t *in)
   }
 }
 
+// Convert buffers representing files to in-memory buffers.  This is an
+// intermediate step: eventually we'll stick rewriting the html in the middle of
+// something like this.
+ngx_int_t exp_buffers_to_memory(ngx_http_request_t *r, ngx_chain_t *in) {
+  ngx_chain_t *cur = in;
+  for (; cur != NULL ; cur = cur->next) {
+    if (cur->buf->file != NULL) {
+      // Replace cur->buf with a buffer that represents the same content
+      // as an in-memory buffer instead of a file. If we need more buffers
+      // we should allocate more chain links but for now we just fail on large
+      // files.
+
+      // Prepare the new buffer.
+      ngx_buf_t *b = ngx_calloc_buf(r->pool);
+      if (b == NULL) {
+        return NGX_ERROR;
+      }
+
+      ssize_t file_size = cur->buf->file_last - cur->buf->file_pos;
+      // TODO(jefftk): if file_size is big enough we should create multiple
+      // buffers and add chain links.
+      b->start = b->pos = ngx_pnalloc(r->pool, file_size);
+      b->end = b->last = b->pos + file_size;
+      b->temporary = 1;
+      ssize_t n = ngx_read_file(cur->buf->file, b->pos, file_size,
+                                cur->buf->file_pos);
+      if (n != file_size) {
+        DBG(r, "Failed to read file; got %d bytes expected %s bytes",
+            n, file_size);
+        return NGX_ERROR;
+      }
+
+      b->last_buf = cur->buf->last_buf;
+      b->last_in_chain = cur->buf->last_in_chain;
+
+      // TODO(jefftk): should we be freeing something with cur->buf before we
+      // replace it?  Or will it just be freed when the request ends because
+      // it's allocated out of the request pool?
+      cur->buf = b;
+    }    
+  }
+
+  return NGX_OK;
+}
+
 static
 ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {
+  ngx_int_t status;
   ngx_http_pagespeed_loc_conf_t *pagespeed_config;
   pagespeed_config = ngx_http_get_module_loc_conf(r, ngx_pagespeed);
 
-  if (pagespeed_config->logstuff) {
-    DBG(r, "We've been invoked!");
+  //if (pagespeed_config->logstuff) {
+  //  DBG(r, "We've been invoked!");
+  //}
+
+  status = exp_buffers_to_memory(r, in);
+  if (status != NGX_OK) {
+    return status;
   }
 
-  ngx_int_t status = exp_note_processed(r, in);
+  status = exp_note_processed(r, in);
   if (status != NGX_OK) {
     return status;
   }
