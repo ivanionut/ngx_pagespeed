@@ -264,7 +264,7 @@ ngx_int_t exp_buffers_to_memory(ngx_http_request_t *r, ngx_chain_t *in) {
       // replace it?  Or will it just be freed when the request ends because
       // it's allocated out of the request pool?
       cur->buf = b;
-    }    
+    }
   }
 
   return NGX_OK;
@@ -280,33 +280,152 @@ ngx_int_t ngx_http_pagespeed_header_filter(ngx_http_request_t *r)
 }
 
 static
+void exp_debug_headers(ngx_http_request_t *r) {
+  ngx_list_t *headers = &r->headers_in.headers;
+
+  ngx_list_part_t *part = &headers->part;
+  ngx_table_elt_t *header = part->elts;
+  ngx_uint_t i = 0;
+  for (;;i++) {
+    if (i >= part->nelts) {
+      if (part->next == NULL) {
+        break;
+      }
+      part = part->next;
+      header = part->elts;
+      i = 0;
+    }
+    // element of list is header[i]
+    DBG(r, "Header[%d] '%*s: %*s'\n", i,
+        header[i].key.len, header[i].key.data,
+        header[i].value.len, header[i].value.data);
+  }
+}
+
+static
+ngx_int_t exp_subrequest(ngx_http_request_t *r, ngx_chain_t *in)
+{
+#if 1
+  // Find the end of the buffer chain.
+  ngx_chain_t *chain_link;
+  int chain_contains_last_buffer = 0;
+  for ( chain_link = in; chain_link != NULL; chain_link = chain_link->next ) {
+    if (chain_link->buf->last_buf) {
+      chain_contains_last_buffer = 1;
+      if (chain_link->next != NULL) {
+        DBG(r, "Chain link thinks its last but has a child.");
+        return NGX_ERROR;
+      }
+      break;  // Chain link now is the last link in the chain.
+    }
+  }
+
+  if (!chain_contains_last_buffer) {
+    // None of the buffers had last_buf set, meaning we have an incomplete chain
+    // and are still waiting to get the final buffer.  Let other body filters
+    // act on the buffers we have so far and wait until we're called again with
+    // the last buffer.
+    DBG(r, "Need the last buffer.");
+    return NGX_OK;
+  }
+#endif 
+
+  //char* uri_s = "http://localhost:8050/style.css";
+  char* uri_s = "/style/style_10xxx.css";
+  int uri_len = strlen(uri_s);
+
+  ngx_int_t rc;
+  ngx_uint_t i;
+  ngx_uint_t i_start = 10000;
+  for (i=i_start ; i-i_start < NGX_HTTP_MAX_SUBREQUESTS; i++) {
+    ngx_str_t uri;
+    uri.len = uri_len;
+    uri.data = ngx_pnalloc(r->pool, uri.len);
+    strncpy((char*)uri.data, uri_s, uri.len);
+    
+    // Manually replaces the three xs in the uri with the three least
+    // significant digits of i.
+    char* x_loc = strchr((char*)uri.data, 'x');
+    x_loc[0] = '0' + i/100%10;
+    x_loc[1] = '0' + i/10%10;
+    x_loc[2] = '0' + i%10;
+
+    ngx_http_request_t *sr;
+    rc = ngx_http_subrequest(r, &uri,
+                             NULL /* args */,
+                             &sr, /* subrequest */
+                             NULL /* callback */,
+                             0 /* flags */);
+    if (rc != NGX_OK) {
+      DBG(r, "Failure on request for %*s", uri.len, uri.data);
+      return rc;
+    }
+  }
+
+  return NGX_OK;
+}
+
+static
 ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {
   ngx_int_t status;
   ngx_http_pagespeed_loc_conf_t *pagespeed_config;
   pagespeed_config = ngx_http_get_module_loc_conf(r, ngx_pagespeed);
 
-  //if (pagespeed_config->logstuff) {
-  //  DBG(r, "We've been invoked!");
-  //}
+  ngx_flag_t primary_request = r == r->main;
+  ngx_flag_t debug_headers = 0;
+  ngx_flag_t buffers_to_memory = 0;
+  ngx_flag_t h1_to_h2 = 0;
+  ngx_flag_t note_processed = 0;
+  ngx_flag_t inspect_buffer_chain = 0;
+  ngx_flag_t test_subrequests = 1;
 
-  status = exp_buffers_to_memory(r, in);
-  if (status != NGX_OK) {
-    return status;
+  if (debug_headers) {
+    exp_debug_headers(r);
   }
 
-  status = exp_h1_to_h2(r, in);
-  if (status != NGX_OK) {
-    return status;
+  if (buffers_to_memory) {
+    status = exp_buffers_to_memory(r, in);
+    if (status != NGX_OK) {
+      return status;
+    }
   }
 
-  status = exp_note_processed(r, in);
-  if (status != NGX_OK) {
-    return status;
+  if (h1_to_h2) {
+    status = exp_h1_to_h2(r, in);
+    if (status != NGX_OK) {
+      return status;
+    }
   }
 
-  if (pagespeed_config->logstuff) {
-    exp_inspect_buffer_chain(r, in);
+  if (note_processed && primary_request) {
+    status = exp_note_processed(r, in);
+    if (status != NGX_OK) {
+      return status;
+    }
+  }
+
+  if (inspect_buffer_chain) {
+    if (pagespeed_config->logstuff) {
+      exp_inspect_buffer_chain(r, in);
+    }
+  }
+
+  DBG(r, "r.uri: '%*s'", r->uri.len, r->uri.data);
+  if (test_subrequests && primary_request) {
+    if (strlen("/index.html") == r->uri.len &&
+        strncmp("/index.html", (char*)r->uri.data, r->uri.len) == 0) {
+      DBG(r, "initiating subrequest");
+
+
+      status = exp_subrequest(r, in);
+      if (status != NGX_OK) {
+        return status;
+      }
+    } else {
+      DBG(r, "r.uri: '%*s' != '/index.html' but r == r->main !!!!!",
+          r->uri.len, r->uri.data);
+    }
   }
 
   // Continue with the next filter.
