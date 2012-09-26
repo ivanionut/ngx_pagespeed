@@ -303,9 +303,15 @@ void exp_debug_headers(ngx_http_request_t *r) {
 }
 
 static
+ngx_int_t exp_subrequest_callback(ngx_http_request_t *r, void *data,
+                                  ngx_int_t rc) {
+  DBG(r, "subrequest callback for '%*s'", r->uri.len, r->uri.data);
+  return rc;
+}
+
+static
 ngx_int_t exp_subrequest(ngx_http_request_t *r, ngx_chain_t *in)
 {
-#if 1
   // Find the end of the buffer chain.
   ngx_chain_t *chain_link;
   int chain_contains_last_buffer = 0;
@@ -328,7 +334,6 @@ ngx_int_t exp_subrequest(ngx_http_request_t *r, ngx_chain_t *in)
     DBG(r, "Need the last buffer.");
     return NGX_OK;
   }
-#endif 
 
   //char* uri_s = "http://localhost:8050/style.css";
   char* uri_s = "/style/style_10xxx.css";
@@ -342,7 +347,7 @@ ngx_int_t exp_subrequest(ngx_http_request_t *r, ngx_chain_t *in)
     uri.len = uri_len;
     uri.data = ngx_pnalloc(r->pool, uri.len);
     strncpy((char*)uri.data, uri_s, uri.len);
-    
+
     // Manually replaces the three xs in the uri with the three least
     // significant digits of i.
     char* x_loc = strchr((char*)uri.data, 'x');
@@ -350,11 +355,16 @@ ngx_int_t exp_subrequest(ngx_http_request_t *r, ngx_chain_t *in)
     x_loc[1] = '0' + i/10%10;
     x_loc[2] = '0' + i%10;
 
-    ngx_http_request_t *sr;
+    ngx_http_post_subrequest_t *ps = ngx_pnalloc(
+       r->pool, sizeof(ngx_http_post_subrequest_t));
+    ps->handler = &exp_subrequest_callback;
+    ps->data = NULL; // Unused.
+    ngx_http_request_t** sr = ngx_pnalloc(r->pool, sizeof(ngx_http_request_t*));
+
     rc = ngx_http_subrequest(r, &uri,
                              NULL /* args */,
-                             &sr, /* subrequest */
-                             NULL /* callback */,
+                             sr /* subrequest */,
+                             ps /* callback */,
                              0 /* flags */);
     if (rc != NGX_OK) {
       DBG(r, "Failure on request for %*s", uri.len, uri.data);
@@ -362,6 +372,14 @@ ngx_int_t exp_subrequest(ngx_http_request_t *r, ngx_chain_t *in)
     }
   }
 
+  return NGX_OK;
+}
+
+static
+ngx_int_t exp_test_timer(ngx_http_request_t *r, ngx_chain_t *in)
+{
+  //ngx_add_timer
+  // -> read ngx_http_echo_sleep.c
   return NGX_OK;
 }
 
@@ -378,7 +396,8 @@ ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
   ngx_flag_t h1_to_h2 = 0;
   ngx_flag_t note_processed = 0;
   ngx_flag_t inspect_buffer_chain = 0;
-  ngx_flag_t test_subrequests = 1;
+  ngx_flag_t test_subrequests = 0;
+  ngx_flag_t test_timers = 1;
 
   if (debug_headers) {
     exp_debug_headers(r);
@@ -411,19 +430,19 @@ ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
     }
   }
 
-  DBG(r, "r.uri: '%*s'", r->uri.len, r->uri.data);
+  if (test_timers) {
+    exp_test_timer(r, in);
+  }
+
   if (test_subrequests && primary_request) {
     if (strlen("/index.html") == r->uri.len &&
         strncmp("/index.html", (char*)r->uri.data, r->uri.len) == 0) {
-      DBG(r, "initiating subrequest");
-
-
       status = exp_subrequest(r, in);
       if (status != NGX_OK) {
         return status;
       }
     } else {
-      DBG(r, "r.uri: '%*s' != '/index.html' but r == r->main !!!!!",
+      DBG(r, "r.uri: '%*s' != '/index.html' but r == r->main !!",
           r->uri.len, r->uri.data);
     }
   }
