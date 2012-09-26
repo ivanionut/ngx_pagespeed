@@ -22,11 +22,13 @@
  *  }
  */
 
-#include <ngx_config.h>
-#include <ngx_core.h>
-#include <ngx_http.h>
+extern "C" {
+  #include <ngx_config.h>
+  #include <ngx_core.h>
+  #include <ngx_http.h>
+}
 
-ngx_module_t ngx_pagespeed;
+extern ngx_module_t ngx_pagespeed;
 
 // Hack for terser exploration.
 #define DBG(r, args...) \
@@ -55,12 +57,13 @@ static ngx_command_t ngx_http_pagespeed_commands[] = {
   ngx_null_command
 };
 
-static void *
-ngx_http_pagespeed_create_loc_conf(ngx_conf_t *cf)
+static void*
+ngx_http_pagespeed_create_loc_conf(ngx_conf_t* cf)
 {
-  ngx_http_pagespeed_loc_conf_t  *conf;
+  ngx_http_pagespeed_loc_conf_t* conf;
 
-  conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_pagespeed_loc_conf_t));
+  conf = static_cast<ngx_http_pagespeed_loc_conf_t*>(
+           ngx_pcalloc(cf->pool, sizeof(ngx_http_pagespeed_loc_conf_t)));
   if (conf == NULL) {
     return NGX_CONF_ERROR;
   }
@@ -69,11 +72,13 @@ ngx_http_pagespeed_create_loc_conf(ngx_conf_t *cf)
   return conf;
 }
 
-static char *
-ngx_http_pagespeed_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
+static char* 
+ngx_http_pagespeed_merge_loc_conf(ngx_conf_t* cf, void* parent, void* child)
 {
-  ngx_http_pagespeed_loc_conf_t *prev = parent;
-  ngx_http_pagespeed_loc_conf_t *conf = child;
+  ngx_http_pagespeed_loc_conf_t* prev =
+    static_cast<ngx_http_pagespeed_loc_conf_t*>(parent);
+  ngx_http_pagespeed_loc_conf_t* conf =
+    static_cast<ngx_http_pagespeed_loc_conf_t*>(child);
 
   ngx_conf_merge_value(conf->logstuff, prev->logstuff, 0);  // Default off.
   ngx_conf_merge_value(conf->active, prev->active, 0);  // Default off.
@@ -86,10 +91,10 @@ static ngx_http_output_body_filter_pt ngx_http_next_body_filter;
 
 // Add a buffer to the end of the buffer chain indicating that we were processed
 // through ngx_pagespeed.
-ngx_int_t exp_note_processed(ngx_http_request_t *r, ngx_chain_t *in)
+ngx_int_t exp_note_processed(ngx_http_request_t* r, ngx_chain_t* in)
 {
   // Find the end of the buffer chain.
-  ngx_chain_t *chain_link;
+  ngx_chain_t* chain_link;
   int chain_contains_last_buffer = 0;
   for ( chain_link = in; chain_link != NULL; chain_link = chain_link->next ) {
     if (chain_link->buf->last_buf) {
@@ -112,15 +117,15 @@ ngx_int_t exp_note_processed(ngx_http_request_t *r, ngx_chain_t *in)
   }
 
   // Prepare a new buffer to put the note into.
-  ngx_buf_t *b = ngx_calloc_buf(r->pool);
+  ngx_buf_t* b = static_cast<ngx_buf_t*>(ngx_calloc_buf(r->pool));
   if (b == NULL) {
     return NGX_ERROR;
   }
 
   // Write to the new buffer.
-  char *note = "<!-- Processed through ngx_pagespeed -->\n";
+  const char note[] = "<!-- Processed through ngx_pagespeed -->\n";
   int note_len = strlen(note);
-  b->start = b->pos = ngx_pnalloc(r->pool, note_len);
+  b->start = b->pos = static_cast<u_char*>(ngx_pnalloc(r->pool, note_len));
   strncpy((char*)b->pos, note, note_len);
   b->end = b->last = b->pos + note_len;
   b->temporary = 1;
@@ -128,7 +133,8 @@ ngx_int_t exp_note_processed(ngx_http_request_t *r, ngx_chain_t *in)
   DBG(r, "\nAttempted to append: '%*s'\n", note_len, b->pos);
 
   // Link the new buffer into the buffer chain.
-  ngx_chain_t *added_link = ngx_alloc_chain_link(r->pool);
+  ngx_chain_t* added_link = static_cast<ngx_chain_t*>(
+                              ngx_alloc_chain_link(r->pool));
   if (added_link == NULL) {
     return NGX_ERROR;
   }
@@ -146,15 +152,15 @@ ngx_int_t exp_note_processed(ngx_http_request_t *r, ngx_chain_t *in)
 }
 
 // Print debugging info about the current buffer chain.
-void exp_inspect_buffer_chain(ngx_http_request_t *r, ngx_chain_t *in)
+void exp_inspect_buffer_chain(ngx_http_request_t* r, ngx_chain_t* in)
 {
   DBG(r, "Inspecting buffer chain");
-  ngx_chain_t *chain_link;
+  ngx_chain_t* chain_link;
   int link_no = 0;
   for ( chain_link = in;
         chain_link != NULL;
         chain_link = chain_link->next, link_no++ ) {
-    ngx_buf_t *b = chain_link->buf;
+    ngx_buf_t* b = chain_link->buf;
     DBG(r,
         "\n\n"
         "Link %d\n"
@@ -193,7 +199,7 @@ void exp_inspect_buffer_chain(ngx_http_request_t *r, ngx_chain_t *in)
     }
     if (b->file) {
       ssize_t file_size = b->file_last - b->file_pos;
-      u_char *tmp_buf = ngx_pnalloc(r->pool, file_size);
+      u_char* tmp_buf = static_cast<u_char*>(ngx_pnalloc(r->pool, file_size));
       ssize_t n = ngx_read_file(b->file, tmp_buf, file_size, b->file_pos);
       if (n != file_size) {
         DBG(r, "Failed to read file; got %d bytes expected %s bytes",
@@ -208,8 +214,8 @@ void exp_inspect_buffer_chain(ngx_http_request_t *r, ngx_chain_t *in)
 }
 
 // Modify temporary buffers in place to substitute 'h2' for 'h1'.
-ngx_int_t exp_h1_to_h2(ngx_http_request_t *r, ngx_chain_t *in) {
-  ngx_chain_t *cur = in;
+ngx_int_t exp_h1_to_h2(ngx_http_request_t* r, ngx_chain_t* in) {
+  ngx_chain_t* cur = in;
   for (; cur != NULL ; cur = cur->next) {
     if (cur->buf->temporary) {
       u_char* p;
@@ -228,8 +234,8 @@ ngx_int_t exp_h1_to_h2(ngx_http_request_t *r, ngx_chain_t *in) {
 // Convert buffers representing files to in-memory buffers.  This is an
 // intermediate step: eventually we'll stick rewriting the html in the middle of
 // something like this.
-ngx_int_t exp_buffers_to_memory(ngx_http_request_t *r, ngx_chain_t *in) {
-  ngx_chain_t *cur = in;
+ngx_int_t exp_buffers_to_memory(ngx_http_request_t* r, ngx_chain_t* in) {
+  ngx_chain_t* cur = in;
   for (; cur != NULL ; cur = cur->next) {
     if (cur->buf->file != NULL) {
       // Replace cur->buf with a buffer that represents the same content
@@ -238,7 +244,7 @@ ngx_int_t exp_buffers_to_memory(ngx_http_request_t *r, ngx_chain_t *in) {
       // files.
 
       // Prepare the new buffer.
-      ngx_buf_t *b = ngx_calloc_buf(r->pool);
+      ngx_buf_t* b = static_cast<ngx_buf_t*>(ngx_calloc_buf(r->pool));
       if (b == NULL) {
         return NGX_ERROR;
       }
@@ -246,7 +252,7 @@ ngx_int_t exp_buffers_to_memory(ngx_http_request_t *r, ngx_chain_t *in) {
       ssize_t file_size = cur->buf->file_last - cur->buf->file_pos;
       // TODO(jefftk): if file_size is big enough we should create multiple
       // buffers and add chain links.
-      b->start = b->pos = ngx_pnalloc(r->pool, file_size);
+      b->start = b->pos = static_cast<u_char*>(ngx_pnalloc(r->pool, file_size));
       b->end = b->last = b->pos + file_size;
       b->temporary = 1;
       ssize_t n = ngx_read_file(cur->buf->file, b->pos, file_size,
@@ -271,7 +277,7 @@ ngx_int_t exp_buffers_to_memory(ngx_http_request_t *r, ngx_chain_t *in) {
 }
 
 static
-ngx_int_t ngx_http_pagespeed_header_filter(ngx_http_request_t *r)
+ngx_int_t ngx_http_pagespeed_header_filter(ngx_http_request_t* r)
 {
   // We're adding content below, so switch to 'Transfer-Encoding: chunked' and
   // calculate on the fly.
@@ -280,11 +286,11 @@ ngx_int_t ngx_http_pagespeed_header_filter(ngx_http_request_t *r)
 }
 
 static
-void exp_debug_headers(ngx_http_request_t *r) {
-  ngx_list_t *headers = &r->headers_in.headers;
+void exp_debug_headers(ngx_http_request_t* r) {
+  ngx_list_t* headers = &r->headers_in.headers;
 
-  ngx_list_part_t *part = &headers->part;
-  ngx_table_elt_t *header = part->elts;
+  ngx_list_part_t* part = &headers->part;
+  ngx_table_elt_t* header = static_cast<ngx_table_elt_t*>(part->elts);
   ngx_uint_t i = 0;
   for (;;i++) {
     if (i >= part->nelts) {
@@ -292,7 +298,7 @@ void exp_debug_headers(ngx_http_request_t *r) {
         break;
       }
       part = part->next;
-      header = part->elts;
+      header = static_cast<ngx_table_elt_t*>(part->elts);
       i = 0;
     }
     // element of list is header[i]
@@ -303,17 +309,17 @@ void exp_debug_headers(ngx_http_request_t *r) {
 }
 
 static
-ngx_int_t exp_subrequest_callback(ngx_http_request_t *r, void *data,
+ngx_int_t exp_subrequest_callback(ngx_http_request_t* r, void* data,
                                   ngx_int_t rc) {
   DBG(r, "subrequest callback for '%*s'", r->uri.len, r->uri.data);
   return rc;
 }
 
 static
-ngx_int_t exp_subrequest(ngx_http_request_t *r, ngx_chain_t *in)
+ngx_int_t exp_subrequest(ngx_http_request_t* r, ngx_chain_t* in)
 {
   // Find the end of the buffer chain.
-  ngx_chain_t *chain_link;
+  ngx_chain_t* chain_link;
   int chain_contains_last_buffer = 0;
   for ( chain_link = in; chain_link != NULL; chain_link = chain_link->next ) {
     if (chain_link->buf->last_buf) {
@@ -335,8 +341,7 @@ ngx_int_t exp_subrequest(ngx_http_request_t *r, ngx_chain_t *in)
     return NGX_OK;
   }
 
-  //char* uri_s = "http://localhost:8050/style.css";
-  char* uri_s = "/style/style_10xxx.css";
+  char uri_s[] = "/style/style_10xxx.css";
   int uri_len = strlen(uri_s);
 
   ngx_int_t rc;
@@ -345,7 +350,7 @@ ngx_int_t exp_subrequest(ngx_http_request_t *r, ngx_chain_t *in)
   for (i=i_start ; i-i_start < NGX_HTTP_MAX_SUBREQUESTS; i++) {
     ngx_str_t uri;
     uri.len = uri_len;
-    uri.data = ngx_pnalloc(r->pool, uri.len);
+    uri.data = static_cast<u_char*>(ngx_pnalloc(r->pool, uri.len));
     strncpy((char*)uri.data, uri_s, uri.len);
 
     // Manually replaces the three xs in the uri with the three least
@@ -355,11 +360,12 @@ ngx_int_t exp_subrequest(ngx_http_request_t *r, ngx_chain_t *in)
     x_loc[1] = '0' + i/10%10;
     x_loc[2] = '0' + i%10;
 
-    ngx_http_post_subrequest_t *ps = ngx_pnalloc(
-       r->pool, sizeof(ngx_http_post_subrequest_t));
+    ngx_http_post_subrequest_t* ps = static_cast<ngx_http_post_subrequest_t*>(
+      ngx_pnalloc(r->pool, sizeof(ngx_http_post_subrequest_t)));
     ps->handler = &exp_subrequest_callback;
     ps->data = NULL; // Unused.
-    ngx_http_request_t** sr = ngx_pnalloc(r->pool, sizeof(ngx_http_request_t*));
+    ngx_http_request_t** sr = static_cast<ngx_http_request_t**>(
+      ngx_pnalloc(r->pool, sizeof(ngx_http_request_t*)));
 
     rc = ngx_http_subrequest(r, &uri,
                              NULL /* args */,
@@ -376,7 +382,7 @@ ngx_int_t exp_subrequest(ngx_http_request_t *r, ngx_chain_t *in)
 }
 
 static
-ngx_int_t exp_test_timer(ngx_http_request_t *r, ngx_chain_t *in)
+ngx_int_t exp_test_timer(ngx_http_request_t* r, ngx_chain_t* in)
 {
   //ngx_add_timer
   // -> read ngx_http_echo_sleep.c
@@ -384,11 +390,12 @@ ngx_int_t exp_test_timer(ngx_http_request_t *r, ngx_chain_t *in)
 }
 
 static
-ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
+ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t* r, ngx_chain_t* in)
 {
   ngx_int_t status;
-  ngx_http_pagespeed_loc_conf_t *pagespeed_config;
-  pagespeed_config = ngx_http_get_module_loc_conf(r, ngx_pagespeed);
+  ngx_http_pagespeed_loc_conf_t* pagespeed_config;
+  pagespeed_config = static_cast<ngx_http_pagespeed_loc_conf_t*>(
+    ngx_http_get_module_loc_conf(r, ngx_pagespeed));
 
   ngx_flag_t primary_request = r == r->main;
   ngx_flag_t debug_headers = 0;
@@ -396,8 +403,8 @@ ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
   ngx_flag_t h1_to_h2 = 0;
   ngx_flag_t note_processed = 0;
   ngx_flag_t inspect_buffer_chain = 0;
-  ngx_flag_t test_subrequests = 0;
-  ngx_flag_t test_timers = 1;
+  ngx_flag_t test_subrequests = 1;
+  ngx_flag_t test_timers = 0;
 
   if (debug_headers) {
     exp_debug_headers(r);
@@ -452,10 +459,11 @@ ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 }
 
 static ngx_int_t
-ngx_http_pagespeed_init(ngx_conf_t *cf)
+ngx_http_pagespeed_init(ngx_conf_t* cf)
 {
-  ngx_http_pagespeed_loc_conf_t *pagespeed_config;
-  pagespeed_config = ngx_http_conf_get_module_loc_conf(cf, ngx_pagespeed);
+  ngx_http_pagespeed_loc_conf_t* pagespeed_config;
+  pagespeed_config = static_cast<ngx_http_pagespeed_loc_conf_t*>(
+    ngx_http_conf_get_module_loc_conf(cf, ngx_pagespeed));
 
   if (pagespeed_config->active) {
     //if (pagespeed_config->logstuff) {

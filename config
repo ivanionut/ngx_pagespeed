@@ -14,10 +14,12 @@
 
 ngx_addon_name=ngx_pagespeed
 
-NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/src/ngx_pagespeed.c"
+NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/src/ngx_pagespeed.cc"
 HTTP_AUX_FILTER_MODULES="$HTTP_AUX_FILTER_MODULES $ngx_addon_name"
 
 # TODO link against libpagespeed / libpsol
 # CORE_LIBS="$CORE_LIBS -lpagespeed"
+
+CORE_LIBS="$CORE_LIBS -lstdc++"
 
 have=NGX_PAGESPEED . auto/have
