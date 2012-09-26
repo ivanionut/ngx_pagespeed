@@ -63,7 +63,7 @@ ngx_http_pagespeed_create_loc_conf(ngx_conf_t* cf)
   ngx_http_pagespeed_loc_conf_t* conf;
 
   conf = static_cast<ngx_http_pagespeed_loc_conf_t*>(
-           ngx_pcalloc(cf->pool, sizeof(ngx_http_pagespeed_loc_conf_t)));
+      ngx_pcalloc(cf->pool, sizeof(ngx_http_pagespeed_loc_conf_t)));
   if (conf == NULL) {
     return NGX_CONF_ERROR;
   }
@@ -76,9 +76,9 @@ static char*
 ngx_http_pagespeed_merge_loc_conf(ngx_conf_t* cf, void* parent, void* child)
 {
   ngx_http_pagespeed_loc_conf_t* prev =
-    static_cast<ngx_http_pagespeed_loc_conf_t*>(parent);
+      static_cast<ngx_http_pagespeed_loc_conf_t*>(parent);
   ngx_http_pagespeed_loc_conf_t* conf =
-    static_cast<ngx_http_pagespeed_loc_conf_t*>(child);
+      static_cast<ngx_http_pagespeed_loc_conf_t*>(child);
 
   ngx_conf_merge_value(conf->logstuff, prev->logstuff, 0);  // Default off.
   ngx_conf_merge_value(conf->active, prev->active, 0);  // Default off.
