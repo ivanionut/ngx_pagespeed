@@ -9,14 +9,17 @@ nginx does not support dynamic loading of modules. You need to add
 ngx_pagespeed as a build time dependency, and to do that you have to first build
 the pagespeed optimization library.
 
-First build mod_pagespeed, following these instructions.
-  http://code.google.com/p/modpagespeed/wiki/HowToBuild
+First build mod_pagespeed, following these instructions:
+http://code.google.com/p/modpagespeed/wiki/HowToBuild
 
-Move the mod_pagespeed directory to a parallel directory to your ngx_pagespeed
-checkout:
+Then move the mod_pagespeed directory to a parallel directory to your
+ngx_pagespeed checkout:
 
     $ cd /path/to/ngx_pagespeed
     $ mv /where/you/built/mod_pagespeed /path/to/mod_pagespeed
+
+Now build nginx:
+
     $ cd /path/to/nginx
     $ auto/configure --add-module=/path/to/ngx_pagespeed
     $ make install
