@@ -30,4 +30,12 @@ parent.
 
 ## How to use
 
-TODO
+To your nginx.conf add to the main block or to a server or location block:
+
+    pagespeed on;
+
+Then fetch a page and note that it adds a comment:
+
+    <!-- Processed through ngx_pagespeed using PSOL version 0.10.0.0  -->
+
+That's all it does so far.

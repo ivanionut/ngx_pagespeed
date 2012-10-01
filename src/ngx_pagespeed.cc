@@ -16,10 +16,9 @@
 
 /*
  * Usage:
- *  server {
- *    pagespeed    on|off;
- *    logstuff     on|off;
- *  }
+ *   server {
+ *     pagespeed    on|off;
+ *   }
  */
 
 extern "C" {
@@ -37,18 +36,10 @@ extern ngx_module_t ngx_pagespeed;
   ngx_log_error(NGX_LOG_ALERT, (r)->connection->log, 0, args)
 
 typedef struct {
-  ngx_flag_t  logstuff;
   ngx_flag_t  active;
 } ngx_http_pagespeed_loc_conf_t;
 
 static ngx_command_t ngx_http_pagespeed_commands[] = {
-  { ngx_string("logstuff"),
-    NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-    ngx_conf_set_flag_slot,
-    NGX_HTTP_LOC_CONF_OFFSET,
-    offsetof(ngx_http_pagespeed_loc_conf_t, logstuff),
-    NULL },
-
   { ngx_string("pagespeed"),
     NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
     ngx_conf_set_flag_slot,
@@ -69,12 +60,11 @@ ngx_http_pagespeed_create_loc_conf(ngx_conf_t* cf)
   if (conf == NULL) {
     return NGX_CONF_ERROR;
   }
-  conf->logstuff = NGX_CONF_UNSET;
   conf->active = NGX_CONF_UNSET;
   return conf;
 }
 
-static char* 
+static char*
 ngx_http_pagespeed_merge_loc_conf(ngx_conf_t* cf, void* parent, void* child)
 {
   ngx_http_pagespeed_loc_conf_t* prev =
@@ -82,7 +72,6 @@ ngx_http_pagespeed_merge_loc_conf(ngx_conf_t* cf, void* parent, void* child)
   ngx_http_pagespeed_loc_conf_t* conf =
       static_cast<ngx_http_pagespeed_loc_conf_t*>(child);
 
-  ngx_conf_merge_value(conf->logstuff, prev->logstuff, 0);  // Default off.
   ngx_conf_merge_value(conf->active, prev->active, 0);  // Default off.
 
   return NGX_CONF_OK;
@@ -93,6 +82,7 @@ static ngx_http_output_body_filter_pt ngx_http_next_body_filter;
 
 // Add a buffer to the end of the buffer chain indicating that we were processed
 // through ngx_pagespeed.
+static
 ngx_int_t exp_note_processed(ngx_http_request_t* r, ngx_chain_t* in)
 {
   // Find the end of the buffer chain.
@@ -102,7 +92,8 @@ ngx_int_t exp_note_processed(ngx_http_request_t* r, ngx_chain_t* in)
     if (chain_link->buf->last_buf) {
       chain_contains_last_buffer = 1;
       if (chain_link->next != NULL) {
-        DBG(r, "Chain link thinks its last but has a child.");
+        ngx_log_error(NGX_LOG_ERR, (r)->connection->log, 0,
+                      "Chain link thinks its last but has a child.");
         return NGX_ERROR;
       }
       break;  // Chain link now is the last link in the chain.
@@ -125,7 +116,9 @@ ngx_int_t exp_note_processed(ngx_http_request_t* r, ngx_chain_t* in)
   }
 
   // Write to the new buffer.
-  const char note[] = "<!-- Processed through ngx_pagespeed -->\n";
+  const char note[] = "<!-- Processed through ngx_pagespeed using PSOL version "
+      MOD_PAGESPEED_VERSION_STRING " -->\n";
+
   int note_len = strlen(note);
   b->start = b->pos = static_cast<u_char*>(ngx_pnalloc(r->pool, note_len));
   strncpy((char*)b->pos, note, note_len);
@@ -142,9 +135,12 @@ ngx_int_t exp_note_processed(ngx_http_request_t* r, ngx_chain_t* in)
   }
 
   added_link->buf = b;
+
+  // Add our new link to the buffer chain.
   added_link->next = NULL;
   chain_link->next = added_link;
 
+  // Mark our new link as the end of the chain.
   chain_link->buf->last_buf = 0;
   added_link->buf->last_buf = 1;
   chain_link->buf->last_in_chain = 0;
@@ -403,12 +399,10 @@ ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t* r, ngx_chain_t* in)
   ngx_flag_t debug_headers = 0;
   ngx_flag_t buffers_to_memory = 0;
   ngx_flag_t h1_to_h2 = 0;
-  ngx_flag_t note_processed = 0;
+  ngx_flag_t note_processed = 1;
   ngx_flag_t inspect_buffer_chain = 0;
   ngx_flag_t test_subrequests = 0;
   ngx_flag_t test_timers = 0;
-
-  DBG(r, "Using pagespeed version: %s", MOD_PAGESPEED_VERSION_STRING);
 
   if (debug_headers) {
     exp_debug_headers(r);
@@ -436,9 +430,7 @@ ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t* r, ngx_chain_t* in)
   }
 
   if (inspect_buffer_chain) {
-    if (pagespeed_config->logstuff) {
-      exp_inspect_buffer_chain(r, in);
-    }
+    exp_inspect_buffer_chain(r, in);
   }
 
   if (test_timers) {
@@ -470,10 +462,6 @@ ngx_http_pagespeed_init(ngx_conf_t* cf)
     ngx_http_conf_get_module_loc_conf(cf, ngx_pagespeed));
 
   if (pagespeed_config->active) {
-    //if (pagespeed_config->logstuff) {
-    //  ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "We're active!");
-    //}
-
     ngx_http_next_header_filter = ngx_http_top_header_filter;
     ngx_http_top_header_filter = ngx_http_pagespeed_header_filter;
 
