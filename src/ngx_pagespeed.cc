@@ -28,6 +28,8 @@ extern "C" {
   #include <ngx_http.h>
 }
 
+#include "net/instaweb/public/version.h"
+
 extern ngx_module_t ngx_pagespeed;
 
 // Hack for terser exploration.
@@ -403,8 +405,10 @@ ngx_int_t ngx_http_pagespeed_body_filter(ngx_http_request_t* r, ngx_chain_t* in)
   ngx_flag_t h1_to_h2 = 0;
   ngx_flag_t note_processed = 0;
   ngx_flag_t inspect_buffer_chain = 0;
-  ngx_flag_t test_subrequests = 1;
+  ngx_flag_t test_subrequests = 0;
   ngx_flag_t test_timers = 0;
+
+  DBG(r, "Using pagespeed version: %s", MOD_PAGESPEED_VERSION_STRING);
 
   if (debug_headers) {
     exp_debug_headers(r);
