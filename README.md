@@ -38,6 +38,7 @@ parent.
 To your nginx.conf add to the main block or to a server or location block:
 
     pagespeed on;
+    pagespeed_cache /path/to/cache/dir;
 
 Then fetch a page and note that it adds a comment:
 
