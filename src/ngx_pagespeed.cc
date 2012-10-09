@@ -29,6 +29,7 @@ extern "C" {
 
 #include "ngx_rewrite_driver_factory.h"
 
+#include "base/scoped_ptr.h"
 #include "net/instaweb/rewriter/public/process_context.h"
 #include "net/instaweb/rewriter/public/rewrite_driver.h"
 #include "net/instaweb/public/version.h"
@@ -50,14 +51,14 @@ typedef struct {
 } ngx_http_pagespeed_loc_conf_t;
 
 typedef struct {
-  net_instaweb::NgxRewriteDriverFactory* driver_factory;
+  scoped_ptr<net_instaweb::NgxRewriteDriverFactory> driver_factory;
   net_instaweb::ServerContext* server_context;
 } ngx_http_pagespeed_module_ctx_t;
 
 typedef struct {
   net_instaweb::RewriteDriver* driver;
-  GoogleString* output;
-  net_instaweb::StringWriter* writer;
+  scoped_ptr<GoogleString> output;
+  scoped_ptr<net_instaweb::StringWriter> writer;
 } ngx_http_pagespeed_request_ctx_t;
 
 // TODO(jefftk): Giant hack.  Need to make this not be global.
@@ -211,9 +212,9 @@ ngx_int_t ngx_http_pagespeed_optimize_and_replace_buffer(ngx_http_request_t* r,
     // TODO(jefftk): replace this with a writer that generates proper nginx
     // buffers and puts them in the chain.  Or avoids the double
     // copy some other way.
-    ctx->output = new GoogleString();
-    ctx->writer = new net_instaweb::StringWriter(ctx->output);
-    ctx->driver->SetWriter(ctx->writer);
+    ctx->output.reset(new GoogleString());
+    ctx->writer.reset(new net_instaweb::StringWriter(ctx->output.get()));
+    ctx->driver->SetWriter(ctx->writer.get());
 
     // For testing we always want to perform any optimizations we can, so we
     // wait until everything is done rather than using a deadline, the way we
@@ -323,8 +324,6 @@ ngx_int_t ngx_http_pagespeed_optimize_and_replace_buffer(ngx_http_request_t* r,
   if (last_buf) {
     // release request context
     ngx_http_set_ctx(r, NULL, ngx_pagespeed);
-    delete ctx->writer;
-    delete ctx->output;
     delete ctx;
   }
 
@@ -368,7 +367,7 @@ ngx_http_pagespeed_init(ngx_conf_t* cf)
     // we're done with it.
 
     context = new ngx_http_pagespeed_module_ctx_t();
-    context->driver_factory = new net_instaweb::NgxRewriteDriverFactory();
+    context->driver_factory.reset(new net_instaweb::NgxRewriteDriverFactory());
 
     context->driver_factory->set_filename_prefix(StringPiece(
         reinterpret_cast<char*>(pagespeed_config->cache_dir.data),
