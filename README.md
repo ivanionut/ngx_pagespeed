@@ -35,10 +35,13 @@ parent.
 
 ## How to use
 
-To your nginx.conf add to the main block or to a server or location block:
+To your nginx.conf add to the main block:
 
     pagespeed on;
     pagespeed_cache /path/to/cache/dir;
+
+Eventually this should also work in a server or location block, but for now
+there's a hack with a global variable that precludes that.
 
 Then fetch a page and note that it adds a comment:
 
