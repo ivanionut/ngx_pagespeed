@@ -107,26 +107,8 @@ ngx_http_pagespeed_merge_loc_conf(ngx_conf_t* cf, void* parent, void* child)
   ngx_http_pagespeed_loc_conf_t* conf =
       static_cast<ngx_http_pagespeed_loc_conf_t*>(child);
 
-  CDBG(cf, "prev Cache[0-%d]=%p: '%*s'",
-       prev->cache_dir.len,
-       prev->cache_dir.data,
-       prev->cache_dir.len,
-       prev->cache_dir.data);
-  
-  CDBG(cf, "conf Cache[0-%d]=%p: '%*s'",
-       conf->cache_dir.len,
-       conf->cache_dir.data,
-       conf->cache_dir.len,
-       conf->cache_dir.data);  
-
   ngx_conf_merge_value(conf->active, prev->active, 0);  // Default off.
   ngx_conf_merge_str_value(conf->cache_dir, prev->cache_dir, "");
-
-  CDBG(cf, "conf revised Cache[0-%d]=%p: '%*s'",
-       conf->cache_dir.len,
-       conf->cache_dir.data,
-       conf->cache_dir.len,
-       conf->cache_dir.data);
 
   return NGX_CONF_OK;
 }
@@ -148,8 +130,6 @@ ngx_int_t ngx_http_pagespeed_header_filter(ngx_http_request_t* r)
 static
 ngx_int_t ngx_http_pagespeed_note_processed(ngx_http_request_t* r,
                                             ngx_chain_t* in) {
-  DBG(r, "Noting processed");
-
   // Find the end of the buffer chain.
   ngx_chain_t* chain_link;
   int chain_contains_last_buffer = 0;
@@ -389,11 +369,6 @@ ngx_http_pagespeed_init(ngx_conf_t* cf)
 
     context = new ngx_http_pagespeed_module_ctx_t();
     context->driver_factory = new net_instaweb::NgxRewriteDriverFactory();
-    CDBG(cf, "Cache[0-%d]=%p: '%*s'",
-         pagespeed_config->cache_dir.len,
-         pagespeed_config->cache_dir.data,
-         pagespeed_config->cache_dir.len,
-         pagespeed_config->cache_dir.data);
 
     context->driver_factory->set_filename_prefix(StringPiece(
         reinterpret_cast<char*>(pagespeed_config->cache_dir.data),
